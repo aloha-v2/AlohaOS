@@ -2,21 +2,34 @@
 #![no_main]
 
 mod drivers;
+mod arch;
 
 use drivers::vga::VgaWriter;
 
+static mut WRITER: Option<VgaWriter> = None;
+
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    let mut writer = VgaWriter::new(0x0F);
-    writer.print_str("Hello from AlohaOS!\n");
+    unsafe {
+        WRITER = Some(VgaWriter::new(0x0F));
+    }
 
-    writer.set_color(0x0A);
-    writer.print_str("Kernel is alive!");
-
+    print("AlohaOS booting...\n");
+    arch::x86_64::idt::init();
+    print("IDT loaded\n");
     loop {}
+}
+
+pub fn print(text: &str) {
+    unsafe {
+        if let Some(ref mut w) = WRITER {
+            w.print_str(text);
+        }
+    }
 }
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
+    print("\nKernel PANIC! System halted.\n");
     loop {}
 }
