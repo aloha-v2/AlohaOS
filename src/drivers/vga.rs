@@ -32,6 +32,13 @@ impl VgaWriter {
                 self.x = 0;
                 return;
             }
+            b'\x08' => {
+                if self.x > 0 {
+                    self.x -= 1;
+                    self.write_cell(self.x, self.y, b' ');
+                }
+                return;
+            }
             _ => {}
         }
 

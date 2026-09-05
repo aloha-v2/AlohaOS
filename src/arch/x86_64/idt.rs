@@ -1,3 +1,6 @@
+use crate::drivers::keyboard::{self, Keyboard};
+use super::pic::PIC;
+
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct IdtEntry {
@@ -20,6 +23,16 @@ struct IdtPointer {
     base: u64,
 }
 
+#[repr(C)]
+pub struct InterruptStackFrame {
+    pub instruction_pointer: u64,
+    pub code_segment: u64,
+    pub cpu_flags: u64,
+    pub stack_pointer: u64,
+    pub stack_segment: u64,
+}
+
+static KEYBOARD: Keyboard = Keyboard::new();
 static mut IDT: Idt = Idt::new();
 
 impl IdtEntry {
@@ -81,6 +94,8 @@ pub fn init() {
         let idt_ptr = addr_of_mut!(IDT);
 
         (*idt_ptr).set_handler(0, divide_error_handler as *const () as u64);
+        (*idt_ptr).set_handler(32, timer_handler as *const () as u64);
+        (*idt_ptr).set_handler(33, keyboard_handler as *const () as u64);
         (*idt_ptr).load();
     }
 }
@@ -88,4 +103,20 @@ pub fn init() {
 extern "C" fn divide_error_handler() -> ! {
     crate::print("DIVIDE BY ZERO caught!\n");
     loop {}
+}
+
+extern "x86-interrupt" fn timer_handler(_frame: InterruptStackFrame) {
+    PIC.send_eoi(0);
+}
+
+extern "x86-interrupt" fn keyboard_handler(_frame: InterruptStackFrame) {
+    let sc = KEYBOARD.read_scancode();
+    if sc & 0x80 == 0 {
+        if let Some(ch) = keyboard::scancode_to_ascii(sc) {
+            if let Ok(s) = core::str::from_utf8(&[ch]) {
+                crate::print(s);
+            }
+        }
+    }
+    PIC.send_eoi(1);
 }
