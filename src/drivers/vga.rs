@@ -12,7 +12,7 @@ const HEIGHT: usize = 25;
 // писатель в текстовый VGA буфер
 impl VgaWriter {
     // создает нового писателя с указанным цветом текста
-    pub fn new(color: u8) -> VgaWriter {
+    pub const fn new(color: u8) -> VgaWriter {
         VgaWriter {
             x: 0,
             y: 0,
@@ -103,3 +103,5 @@ impl VgaWriter {
         }
     }
 }
+
+unsafe impl Send for VgaWriter {}

@@ -4,17 +4,16 @@
 
 mod drivers;
 mod arch;
+mod sync;
 
 use drivers::vga::VgaWriter;
 use arch::x86_64::pic::PIC;
+use sync::spinlock::SpinLock;
 
-static mut WRITER: Option<VgaWriter> = None;
+static WRITER: SpinLock<VgaWriter> = SpinLock::new(VgaWriter::new(0x0F));
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    unsafe {
-        WRITER = Some(VgaWriter::new(0x0F));
-    }
     print("AlohaOS booting...\n");
     
     arch::x86_64::idt::init();
@@ -30,11 +29,8 @@ pub extern "C" fn _start() -> ! {
 }
 
 pub fn print(text: &str) {
-    unsafe {
-        if let Some(ref mut w) = WRITER {
-            w.print_str(text);
-        }
-    }
+    let mut guard = WRITER.lock();
+    guard.print_str(text);
 }
 
 #[panic_handler]
