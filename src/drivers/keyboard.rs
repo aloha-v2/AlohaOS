@@ -1,4 +1,7 @@
 use crate::arch::x86_64::port::Port;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+static SHIFT: AtomicBool = AtomicBool::new(false);
 
 pub struct Keyboard {
     port: Port,
@@ -62,7 +65,26 @@ const fn build_map() -> [u8; 256] {
 
 const SCANCODE_MAP: [u8; 256] = build_map();
 
-pub fn scancode_to_ascii(sc: u8) -> Option<u8> {
-    let c = SCANCODE_MAP[sc as usize];
-    if c == 0 { None } else { Some(c) }
-} 
+pub fn scancode_to_ascii(sc: u8, shift: bool) -> Option<u8> {
+    let mut c = SCANCODE_MAP[sc as usize];
+
+    if c == 0 {
+        return None;
+    }
+    
+    if shift {
+        if c >= b'a' && c <= b'z' {
+            c -= 32;
+        }
+    }
+
+    Some(c)
+}
+
+pub fn set_shift(pressed: bool) {
+    SHIFT.store(pressed, Ordering::Relaxed);
+}
+
+pub fn is_shift_pressed() -> bool {
+    SHIFT.load(Ordering::Relaxed)
+}

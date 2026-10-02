@@ -25,7 +25,9 @@ pub extern "C" fn _start() -> ! {
     }
     print("Interrupts enabled\n");
 
-    loop {}
+    loop {
+        unsafe { core::arch::asm!("hlt"); }
+    }
 }
 
 pub fn print(text: &str) {

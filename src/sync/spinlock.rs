@@ -9,6 +9,7 @@ pub struct SpinLock<T> {
 
 pub struct SpinLockGuard<'a, T> {
     lock: &'a SpinLock<T>,
+    were_enabled: bool,
 }
 
 impl<T> SpinLock<T> {
@@ -20,6 +21,12 @@ impl<T> SpinLock<T> {
     }
 
     pub fn lock(&self) -> SpinLockGuard<'_, T> {
+        let flags: u64;
+        unsafe { core::arch::asm!("pushfq; pop {}", out(reg) flags); }
+        let were_enabled = flags & (1 << 9) != 0;
+
+        unsafe { core::arch::asm!("cli"); }
+
         loop {
             match self.locked.compare_exchange(
                 false,
@@ -30,6 +37,7 @@ impl<T> SpinLock<T> {
                 Ok(_) => {
                     break SpinLockGuard {
                         lock: self,
+                        were_enabled,
                     }
                 }
                 Err(_) => {}
@@ -41,6 +49,9 @@ impl<T> SpinLock<T> {
 impl<T> Drop for SpinLockGuard<'_, T> {
     fn drop(&mut self) {
         self.lock.locked.store(false, Ordering::Release);
+        if self.were_enabled {
+            unsafe { core::arch::asm!("sti"); }
+        }
     }
 }
 

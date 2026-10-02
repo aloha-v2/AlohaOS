@@ -111,12 +111,27 @@ extern "x86-interrupt" fn timer_handler(_frame: InterruptStackFrame) {
 
 extern "x86-interrupt" fn keyboard_handler(_frame: InterruptStackFrame) {
     let sc = KEYBOARD.read_scancode();
-    if sc & 0x80 == 0 {
-        if let Some(ch) = keyboard::scancode_to_ascii(sc) {
-            if let Ok(s) = core::str::from_utf8(&[ch]) {
-                crate::print(s);
+        
+    match sc {
+        0x2A | 0x36 => {
+            keyboard::set_shift(true);
+        }
+
+        0xAA | 0xB6 => {
+            keyboard::set_shift(false);
+        }
+
+        _ if sc & 0x80 == 0 => {
+            let shifted = keyboard::is_shift_pressed();
+
+            if let Some(ch) = keyboard::scancode_to_ascii(sc, shifted) {
+                if let Ok(s) = core::str::from_utf8(&[ch]) {
+                    crate::print(s);
+                }
             }
         }
+        _ => {}
     }
+
     PIC.send_eoi(1);
 }
