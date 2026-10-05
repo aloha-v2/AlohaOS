@@ -1,4 +1,5 @@
-use crate::drivers::keyboard::{self, Keyboard};
+use crate::drivers::keyboard::{Keyboard, KeyCode, KeyEvent};
+use crate::sync::spinlock::SpinLock;
 use super::pic::PIC;
 
 #[repr(C, packed)]
@@ -15,7 +16,7 @@ pub struct IdtEntry {
 
 pub struct Idt {
     entries: [IdtEntry; 256],
-}
+}   
 
 #[repr(C, packed)]
 struct IdtPointer {
@@ -32,7 +33,7 @@ pub struct InterruptStackFrame {
     pub stack_segment: u64,
 }
 
-static KEYBOARD: Keyboard = Keyboard::new();
+static KEYBOARD: SpinLock<Keyboard> = SpinLock::new(Keyboard::new());
 static mut IDT: Idt = Idt::new();
 
 impl IdtEntry {
@@ -110,28 +111,33 @@ extern "x86-interrupt" fn timer_handler(_frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn keyboard_handler(_frame: InterruptStackFrame) {
-    let sc = KEYBOARD.read_scancode();
+    let mut guard = KEYBOARD.lock();
+    let sc = guard.read_scancode();
         
-    match sc {
-        0x2A | 0x36 => {
-            keyboard::set_shift(true);
-        }
-
-        0xAA | 0xB6 => {
-            keyboard::set_shift(false);
-        }
-
-        _ if sc & 0x80 == 0 => {
-            let shifted = keyboard::is_shift_pressed();
-
-            if let Some(ch) = keyboard::scancode_to_ascii(sc, shifted) {
-                if let Ok(s) = core::str::from_utf8(&[ch]) {
-                    crate::print(s);
-                }
-            }
-        }
-        _ => {}
+    if let Some(event) = guard.process_scancode(sc) {
+        handle_key_event(event);
     }
 
     PIC.send_eoi(1);
+}
+
+fn handle_key_event(event: KeyEvent) {
+    match event {
+        KeyEvent::Pressed(keycode) => {
+            match keycode {
+                KeyCode::Char(c) => {
+                    if let Ok(s) = core::str::from_utf8(&[c]) {
+                        crate::print(s);
+                    }
+                }
+                KeyCode::Enter => crate::print("\n"),
+                KeyCode::Backspace => crate::print("\x08"),
+                KeyCode::Space => crate::print(" "),
+                KeyCode::Tab => crate::print("    "),
+                KeyCode::Escape => {},
+                _ => {}
+            }
+        }
+        KeyEvent::Released(_) => {}
+    }
 }
