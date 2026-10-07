@@ -115,29 +115,8 @@ extern "x86-interrupt" fn keyboard_handler(_frame: InterruptStackFrame) {
     let sc = guard.read_scancode();
         
     if let Some(event) = guard.process_scancode(sc) {
-        handle_key_event(event);
+        crate::EVENT_QUEUE.push(event);
     }
 
     PIC.send_eoi(1);
-}
-
-fn handle_key_event(event: KeyEvent) {
-    match event {
-        KeyEvent::Pressed(keycode) => {
-            match keycode {
-                KeyCode::Char(c) => {
-                    if let Ok(s) = core::str::from_utf8(&[c]) {
-                        crate::print(s);
-                    }
-                }
-                KeyCode::Enter => crate::print("\n"),
-                KeyCode::Backspace => crate::print("\x08"),
-                KeyCode::Space => crate::print(" "),
-                KeyCode::Tab => crate::print("    "),
-                KeyCode::Escape => {},
-                _ => {}
-            }
-        }
-        KeyEvent::Released(_) => {}
-    }
 }
