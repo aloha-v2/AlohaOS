@@ -1,0 +1,3 @@
+# Exclude third-party Limine code from language statistics
+
+limine/** linguist-vendored
