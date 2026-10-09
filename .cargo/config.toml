@@ -1,6 +1,6 @@
 [build]
 target = "x86_64-unknown-none"
-rustflags = ["-C", "relocation-model=static"]
+rustflags = ["-C", "relocation-model=static", "-C", "link-arg=-Tlinker.ld"]
 
 [target.'cfg(target_os = "none")']
-runner = "bootimage runner"
+runner = ["python", "tools/build_and_run.py"]

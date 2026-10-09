@@ -1,1 +1,7 @@
-/target
+/target/
+/build/
+
+*.iso
+*.img
+
+limine-binary.tar.gz

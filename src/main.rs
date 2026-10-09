@@ -12,24 +12,47 @@ use arch::x86_64::pic::PIC;
 use sync::spinlock::SpinLock;
 use sync::ring_buffer::RingBuffer;
 use shell::shell::draw_cursor;
+use limine::request::FramebufferRequest;
+use limine::BaseRevision;
+
+#[used]
+#[unsafe(link_section = ".requests")]
+static BASE_REVISION: BaseRevision = BaseRevision::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 static EVENT_QUEUE: RingBuffer = RingBuffer::new();
 static WRITER: SpinLock<VgaWriter> = SpinLock::new(VgaWriter::new(0x0F));
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    print("AlohaOS booting...\n");
+    // print("AlohaOS booting...\n");
     
     arch::x86_64::idt::init();
-    print("IDT loaded\n");
+    // print("IDT loaded\n");
 
     PIC.init();
     unsafe {
         core::arch::asm!("sti");
     }
-    print("Interrupts enabled\n");
+    // print("Interrupts enabled\n");
 
-    draw_cursor();
+    // draw_cursor();
+
+    if let Some(fb_response) = FRAMEBUFFER_REQUEST.response() {
+        if let Some(fb) = fb_response.framebuffers().first() {
+            let mut framebuffer = drivers::graphics::Framebuffer::new(
+                fb.address() as *mut u8,
+                fb.width as usize,
+                fb.height as usize,
+                fb.pitch as usize,
+                fb.bpp as usize,
+            );
+            framebuffer.fill_screen(0x00FF0000);
+        }
+    }
 
     loop {
         if let Some(event) = EVENT_QUEUE.pop()  {
