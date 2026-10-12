@@ -94,28 +94,81 @@ impl Keyboard {
             _ => {}
         }
 
-        let shift_active = (self.shift_count > 0) ^ self.caps_lock;
+        let shift = self.shift_count > 0;
+        let normal = NORMAL_MAP[code as usize];
 
-        let mut c = if shift_active {
+        let c = if normal.is_ascii_lowercase() {
+            // буквы: Shift и Caps Lock инвертируют друг друга
+            if shift ^ self.caps_lock { normal.to_ascii_uppercase() } else { normal }
+        } else if shift {
             SHIFTED_MAP[code as usize]
         } else {
-            NORMAL_MAP[code as usize]
+            normal
         };
-        
-        if shift_active && c.is_ascii_lowercase() {
-            c = c.to_ascii_uppercase();
-        }
 
         if c == 0 {
-        return None;
+            return None;
         }
 
         return Some(KeyEvent::Pressed(KeyCode::Char(c)));
     }
 
+    #[allow(dead_code)]
     pub fn read_scancode(&self) -> u8 {
         self.port.read()
     }
+}
+
+// ---------- Инициализация контроллера PS/2 (i8042) ----------
+// После UEFI/OVMF контроллер может остаться с выключенным IRQ1 или с байтом
+// в выходном буфере; тогда прерывание клавиатуры не придёт никогда.
+
+const STATUS_CMD: u16 = 0x64;
+const DATA: u16 = 0x60;
+
+fn wait_write() -> bool {
+    let s = Port::new(STATUS_CMD);
+    for _ in 0..100_000 {
+        if s.read() & 0x02 == 0 { return true; }
+    }
+    false
+}
+
+fn wait_read() -> bool {
+    let s = Port::new(STATUS_CMD);
+    for _ in 0..100_000 {
+        if s.read() & 0x01 != 0 { return true; }
+    }
+    false
+}
+
+fn flush_output() {
+    let s = Port::new(STATUS_CMD);
+    let d = Port::new(DATA);
+    for _ in 0..32 {
+        if s.read() & 0x01 != 0 { d.read(); } else { break; }
+    }
+}
+
+pub fn init_controller() {
+    let cmd = Port::new(STATUS_CMD);
+    let data = Port::new(DATA);
+
+    if wait_write() { cmd.write(0xAD); }          // временно выключить порт клавиатуры
+    flush_output();
+
+    if wait_write() { cmd.write(0x20); }          // прочитать config byte
+    let mut cfg = if wait_read() { data.read() } else { 0x00 };
+    cfg |= 0b0100_0001;                           // bit0: IRQ1 вкл, bit6: трансляция в set 1
+    cfg &= !0b0001_0000;                          // bit4: тактирование клавиатуры вкл
+    if wait_write() { cmd.write(0x60); }          // записать config byte
+    if wait_write() { data.write(cfg); }
+
+    if wait_write() { cmd.write(0xAE); }          // включить порт клавиатуры
+
+    if wait_write() { data.write(0xF4); }         // enable scanning
+    if wait_read() { data.read(); }               // ответ ACK (0xFA)
+    flush_output();
 }
 
 const NORMAL_MAP: [u8; 128] = [

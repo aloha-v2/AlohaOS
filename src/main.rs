@@ -2,74 +2,49 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 
-mod drivers;
 mod arch;
-mod sync;
+mod boot;
+mod console;
+mod drivers;
 mod shell;
-
-use drivers::vga::VgaWriter;
-use arch::x86_64::pic::PIC;
-use sync::spinlock::SpinLock;
-use sync::ring_buffer::RingBuffer;
-use shell::shell::draw_cursor;
-use limine::request::FramebufferRequest;
-use limine::BaseRevision;
-
-#[used]
-#[unsafe(link_section = ".requests")]
-static BASE_REVISION: BaseRevision = BaseRevision::new();
-
-#[used]
-#[unsafe(link_section = ".requests")]
-static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
-
-static EVENT_QUEUE: RingBuffer = RingBuffer::new();
-static WRITER: SpinLock<VgaWriter> = SpinLock::new(VgaWriter::new(0x0F));
+mod sync;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    // print("AlohaOS booting...\n");
-    
-    arch::x86_64::idt::init();
-    // print("IDT loaded\n");
+    console::init();
+    console::print("AlohaOS booting...\n");
 
-    PIC.init();
-    unsafe {
-        core::arch::asm!("sti");
+    arch::x86_64::init();
+    console::print("IDT, PIC and PS/2 initialized\n");
+
+    if let Some(fb) = boot::framebuffer() {
+        console::init_console(fb);
+        console::print("Graphics console ready\n");
     }
-    // print("Interrupts enabled\n");
 
-    // draw_cursor();
-
-    if let Some(fb_response) = FRAMEBUFFER_REQUEST.response() {
-        if let Some(fb) = fb_response.framebuffers().first() {
-            let mut framebuffer = drivers::graphics::Framebuffer::new(
-                fb.address() as *mut u8,
-                fb.width as usize,
-                fb.height as usize,
-                fb.pitch as usize,
-                fb.bpp as usize,
-            );
-            framebuffer.fill_screen(0x00FF0000);
-        }
-    }
+    arch::x86_64::enable_interrupts();
+    console::print("Interrupts enabled. Type something:\n");
 
     loop {
-        if let Some(event) = EVENT_QUEUE.pop()  {
-            shell::handle_key_event(event);
-        };
-        
-        unsafe { core::arch::asm!("hlt"); }
-    }
-}
+        arch::x86_64::idt::poll_keyboard();
 
-pub fn print(text: &str) {
-    let mut guard = WRITER.lock();
-    guard.print_str(text);
+        while let Some(event) = shell::poll_event() {
+            shell::handle_key_event(event);
+        }
+        core::hint::spin_loop();
+    }
 }
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    print("\nKernel PANIC! System halted.\n");
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    console::emergency_print("\nKernel PANIC! System halted.\n");
+    if let Some(loc) = info.location() {
+        console::emergency_print(loc.file());
+        console::emergency_print(":");
+        console::emergency_hex(loc.line() as u64);
+        console::emergency_print("\n");
+    }
+    loop {
+        unsafe { core::arch::asm!("cli; hlt"); }
+    }
 }

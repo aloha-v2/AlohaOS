@@ -2,8 +2,11 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use core::cell::UnsafeCell;
 use crate::drivers::keyboard::{KeyEvent, KeyCode};
 
+const SIZE: usize = 64;
+
+/// Кольцевой буфер "один производитель (ISR) / один потребитель (main loop)".
 pub struct RingBuffer {
-    buffer: UnsafeCell<[KeyEvent; 64]>,
+    buffer: UnsafeCell<[KeyEvent; SIZE]>,
     head: AtomicUsize,
     tail: AtomicUsize,
 }
@@ -11,7 +14,7 @@ pub struct RingBuffer {
 impl RingBuffer {
     pub const fn new() -> Self {
         Self {
-            buffer: UnsafeCell::new([KeyEvent::Released(KeyCode::Escape); 64]),
+            buffer: UnsafeCell::new([KeyEvent::Released(KeyCode::Escape); SIZE]),
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
         }
@@ -19,39 +22,33 @@ impl RingBuffer {
 
     pub fn push(&self, event: KeyEvent) {
         let head = self.head.load(Ordering::Relaxed);
-        let tail = self.tail.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Acquire);
 
-
-        let next_head = (head + 1) % 64;
+        let next_head = (head + 1) % SIZE;
         if next_head == tail {
-            return;
+            return; // буфер полон — событие теряется
         }
 
-        let ptr = self.buffer.get();
         unsafe {
-            (*ptr)[head] = event;
+            (*self.buffer.get())[head] = event;
         }
 
-        self.head.store(next_head, Ordering::Relaxed);
+        self.head.store(next_head, Ordering::Release);
     }
 
     pub fn pop(&self) -> Option<KeyEvent> {
-        let head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Relaxed);
+        let head = self.head.load(Ordering::Acquire);
 
         if tail == head {
             return None;
         }
 
-        let ptr = self.buffer.get();
-        let event = unsafe {
-            (*ptr)[tail]
-        };
+        let event = unsafe { (*self.buffer.get())[tail] };
 
-        let next_tail = (tail + 1) % 64;
-        self.tail.store(next_tail, Ordering::Relaxed);
-        
-        return Some(event);
+        self.tail.store((tail + 1) % SIZE, Ordering::Release);
+
+        Some(event)
     }
 }
 
