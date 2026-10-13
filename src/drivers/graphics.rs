@@ -51,11 +51,26 @@ pub struct GraphicsConsole {
     fb: Framebuffer,
     cursor_x: usize,
     cursor_y: usize,
+    cursor_visible: bool,
+    fg: u32,
+    bg: u32,
 }
 
 impl GraphicsConsole {
-    pub fn new(fb: Framebuffer) -> Self {
-        Self { fb, cursor_x: 0, cursor_y: 0 }
+    pub fn new(fb: Framebuffer, fg: u32, bg: u32) -> Self {
+        Self {
+            fb,
+            cursor_x: 0,
+            cursor_y: 0,
+            cursor_visible: false,
+            fg,
+            bg,
+        }
+    }
+
+    pub fn set_color(&mut self, fg: u32, bg: u32) {
+        self.fg = fg;
+        self.bg = bg;
     }
 
     pub fn cols(&self) -> usize {
@@ -66,16 +81,19 @@ impl GraphicsConsole {
         self.fb.height / CHAR_H
     }
 
-    pub fn clear(&mut self, bg: u32) {
-        self.fb.fill_screen(bg);
+    pub fn clear(&mut self) {
+        self.fb.fill_screen(self.bg);
         self.cursor_x = 0;
         self.cursor_y = 0;
+        self.cursor_visible = false;
     }
 
-    pub fn draw_glyph(&mut self, cx: usize, cy: usize, ch: u8, fg: u32, bg: u32) {
+    pub fn draw_glyph(&mut self, cx: usize, cy: usize, ch: u8) {
         let px = cx * CHAR_W;
         let py = cy * CHAR_H;
         let base = ch as usize * CHAR_H;
+        let fg = self.fg;
+        let bg = self.bg;
 
         for row in 0..CHAR_H {
             let bits = FONT[base + row];
@@ -86,9 +104,10 @@ impl GraphicsConsole {
         }
     }
 
-    pub fn scroll_up(&mut self, bg: u32) {
+    pub fn scroll_up(&mut self) {
         let shift = CHAR_H * self.fb.pitch;
         let total = self.fb.height * self.fb.pitch;
+        let bg = self.bg;
         unsafe {
             core::ptr::copy(
                 self.fb.buffer.add(shift),
@@ -99,7 +118,7 @@ impl GraphicsConsole {
         self.fb.fill_rect(0, self.fb.height - CHAR_H, self.fb.width, CHAR_H, bg);
     }
 
-    pub fn print_char(&mut self, ch: u8, fg: u32, bg: u32) {
+    pub fn print_char(&mut self, ch: u8) {
         match ch {
             b'\n' => {
                 self.cursor_x = 0;
@@ -113,24 +132,24 @@ impl GraphicsConsole {
                     self.cursor_x = 0;
                     self.cursor_y += 1;
                 }
-                self.draw_glyph(self.cursor_x, self.cursor_y, ch, fg, bg);
+                self.draw_glyph(self.cursor_x, self.cursor_y, ch);
                 self.cursor_x += 1;
             }
         }
 
         if self.cursor_y >= self.rows() {
-            self.scroll_up(bg);
+            self.scroll_up();
             self.cursor_y = self.rows() - 1;
         }
     }
 
-    pub fn print_str(&mut self, text: &str, fg: u32, bg: u32) {
+    pub fn print_str(&mut self, text: &str) {
         for &b in text.as_bytes() {
-            self.print_char(b, fg, bg);
+            self.print_char(b);
         }
     }
 
-    pub fn backspace(&mut self, bg: u32) {
+    pub fn backspace(&mut self) {
         if self.cursor_x == 0 && self.cursor_y == 0 {
             return;
         }
@@ -142,6 +161,22 @@ impl GraphicsConsole {
             self.cursor_x -= 1;
         }
 
-        self.draw_glyph(self.cursor_x, self.cursor_y, b' ', bg, bg);
+        self.draw_glyph(self.cursor_x, self.cursor_y, b' ');
+    }
+
+    pub fn show_cursor(&mut self) {
+        if self.cursor_visible {
+            return;
+        }
+        self.draw_glyph(self.cursor_x, self.cursor_y, 0xDC);
+        self.cursor_visible = true;
+    }
+
+    pub fn hide_cursor(&mut self) {
+        if !self.cursor_visible {
+            return;
+        }
+        self.draw_glyph(self.cursor_x, self.cursor_y, b' ');
+        self.cursor_visible = false;
     }
 }

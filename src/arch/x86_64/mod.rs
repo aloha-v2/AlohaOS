@@ -2,6 +2,7 @@ pub mod idt;
 pub mod port;
 pub mod pic;
 pub mod serial;
+pub mod power;
 
 /// Настраивает IDT, PIC и контроллер PS/2. Прерывания остаются выключенными.
 pub fn init() {

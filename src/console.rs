@@ -4,6 +4,7 @@ use crate::sync::spinlock::SpinLock;
 
 pub const FG: u32 = 0x00FFFFFF;
 pub const BG: u32 = 0x00000000;
+pub const GREEN: u32 = 0x0000FF00;
 
 static SERIAL: SpinLock<SerialPort> = SpinLock::new(SerialPort::new(SerialPort::COM1));
 static CONSOLE: SpinLock<Option<GraphicsConsole>> = SpinLock::new(None);
@@ -13,16 +14,25 @@ pub fn init() {
 }
 
 pub fn init_console(fb: Framebuffer) {
-    let mut console = GraphicsConsole::new(fb);
-    console.clear(BG);
+    let mut console = GraphicsConsole::new(fb, FG, BG); 
+    console.clear();
     *CONSOLE.lock() = Some(console);
+}
+
+pub fn set_color(fg: u32, bg: u32) {
+    let mut guard = CONSOLE.lock();
+    if let Some(console) = guard.as_mut() {
+        console.set_color(fg, bg);
+    }
 }
 
 pub fn print(text: &str) {
     SERIAL.lock().write_str(text);
     let mut guard = CONSOLE.lock();
     if let Some(console) = guard.as_mut() {
-        console.print_str(text, FG, BG);
+        console.hide_cursor();
+        console.print_str(text);
+        console.show_cursor();
     }
 }
 
@@ -57,7 +67,9 @@ pub fn print_char(ch: u8) {
 
     let mut guard = CONSOLE.lock();
     if let Some(console) = guard.as_mut() {
-        console.print_char(ch, FG, BG);
+        console.hide_cursor();
+        console.print_char(ch);
+        console.show_cursor();
     }
 }
 
@@ -66,7 +78,9 @@ pub fn backspace() {
 
     let mut guard = CONSOLE.lock();
     if let Some(console) = guard.as_mut() {
-        console.backspace(BG);
+        console.hide_cursor();
+        console.backspace();
+        console.show_cursor();
     }
 }
 
@@ -81,5 +95,26 @@ pub fn emergency_hex(n: u64) {
     for i in (0..16).rev() {
         let d = ((n >> (i * 4)) & 0xF) as u8;
         s.write_byte(if d < 10 { b'0' + d } else { b'a' + d - 10 });
+    }
+}
+
+pub fn show_cursor() {
+    let mut guard = CONSOLE.lock();
+    if let Some(console) = guard.as_mut() {
+        console.show_cursor();
+    }
+}
+
+pub fn hide_cursor() {
+    let mut guard = CONSOLE.lock();
+    if let Some(console) = guard.as_mut() {
+        console.hide_cursor();
+    }
+}
+
+pub fn clear_screen() {
+    let mut guard = CONSOLE.lock();
+    if let Some(console) = guard.as_mut() {
+        console.clear();
     }
 }

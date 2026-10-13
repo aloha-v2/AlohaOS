@@ -19,11 +19,10 @@ pub extern "C" fn _start() -> ! {
 
     if let Some(fb) = boot::framebuffer() {
         console::init_console(fb);
-        console::print("Graphics console ready\n");
     }
 
     arch::x86_64::enable_interrupts();
-    console::print("Interrupts enabled. Type something:\n");
+    shell::init();
 
     loop {
         arch::x86_64::idt::poll_keyboard();
